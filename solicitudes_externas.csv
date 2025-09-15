@@ -1,0 +1,5 @@
+cliente_email,asunto,descripcion,estado,agente_id
+carla.rodriguez@email.com,Problema con el servicio,El servicio se cae constantemente.,abierta,1
+pedro.sanchez@email.com,Solicitud de reembolso,El producto llegó defectuoso.,abierta,2
+laura.diaz@email.com,Consulta de precios,Necesito una cotización para un plan empresarial.,abierta,
+carla.rodriguez@email.com,Error en el login,No puedo acceder a mi cuenta con mis credenciales.,abierta,1
