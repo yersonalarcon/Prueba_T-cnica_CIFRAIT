@@ -14,70 +14,79 @@ const dbConfig = {
 const filePath = path.join(__dirname, 'solicitudes_externas.csv');
 
 async function runETL() {
+    console.log('Iniciando el proceso ETL...');
+
     let connection;
     try {
+        // Conexión a la base de datos
         connection = await mysql.createConnection(dbConfig);
         console.log('Conexión a la base de datos exitosa.');
-
+        
         const results = [];
-        fs.createReadStream(filePath)
-            .pipe(csv())
-            .on('data', (data) => results.push(data))
-            .on('end', async () => {
-                console.log('Datos del CSV leídos correctamente. Iniciando la carga...');
+        const parser = fs.createReadStream(filePath).pipe(csv());
 
-                for (const row of results) {
-                    try {
-                        // 1. **Transformación:** Normalizar y limpiar los datos del CSV
-                        const {
-                            cliente_email,
-                            asunto,
-                            descripcion,
-                            estado,
-                            agente_id
-                        } = row;
+        // Manejar el evento de datos
+        parser.on('data', (data) => results.push(data));
 
-                        // Verificar si el cliente ya existe
-                        let [clientesExistentes] = await connection.query(
-                            'SELECT id_cliente FROM clientes WHERE email = ?',
-                            [cliente_email]
-                        );
+        // Manejar el evento de fin de lectura
+        await new Promise((resolve) => parser.on('end', resolve));
 
-                        let idCliente;
-                        if (clientesExistentes.length === 0) {
-                            // Si el cliente no existe, crearlo
-                            const [nuevoCliente] = await connection.query(
-                                'INSERT INTO clientes (nombre, email) VALUES (?, ?)',
-                                [cliente_email, cliente_email]
-                            );
-                            idCliente = nuevoCliente.insertId;
-                            console.log(`Cliente nuevo creado con ID: ${idCliente}`);
-                        } else {
-                            idCliente = clientesExistentes[0].id_cliente;
-                        }
+        console.log('Datos del CSV leídos correctamente. Iniciando la carga...');
 
-                        // 2. **Carga:** Insertar la solicitud
-                        await connection.query(
-                            'INSERT INTO solicitudes (id_cliente, id_agente, asunto, descripcion, estado) VALUES (?, ?, ?, ?, ?)',
-                            [idCliente, agente_id || null, asunto, descripcion, estado]
-                        );
+        // Procesar y cargar cada fila
+        for (const row of results) {
+            try {
+                const {
+                    cliente_email,
+                    asunto,
+                    descripcion,
+                    estado,
+                    agente_id
+                } = row;
 
-                    } catch (error) {
-                        console.error('Error al procesar una fila:', error);
-                    }
+                // Verificar si el cliente ya existe
+                let [clientesExistentes] = await connection.query(
+                    'SELECT id_cliente FROM clientes WHERE email = ?',
+                    [cliente_email]
+                );
+
+                let idCliente;
+                if (clientesExistentes.length === 0) {
+                    // Si el cliente no existe, crearlo
+                    const [nuevoCliente] = await connection.query(
+                        'INSERT INTO clientes (nombre, email) VALUES (?, ?)',
+                        [cliente_email, cliente_email]
+                    );
+                    idCliente = nuevoCliente.insertId;
+                    console.log(`Cliente nuevo creado con ID: ${idCliente}`);
+                } else {
+                    idCliente = clientesExistentes[0].id_cliente;
                 }
-                console.log('Carga de datos finalizada.');
-            });
+
+                // Insertar la solicitud en la tabla
+                await connection.query(
+                    'INSERT INTO solicitudes (id_cliente, id_agente, asunto, descripcion, estado) VALUES (?, ?, ?, ?, ?)',
+                    [idCliente, agente_id || null, asunto, descripcion, estado]
+                );
+                
+            } catch (error) {
+                console.error('Error al procesar una fila:', error.message);
+            }
+        }
+        
+        console.log('Carga de datos finalizada con éxito.');
 
     } catch (error) {
-        console.error('Error en el proceso ETL:', error);
+        console.error('Error en el proceso ETL:', error.message);
+        if (error.sqlState) {
+            console.error('SQL State:', error.sqlState);
+        }
     } finally {
-        if (connection) connection.end();
+        if (connection) {
+            await connection.end();
+            console.log('Conexión a la base de datos cerrada.');
+        }
     }
 }
-
-// Suponiendo un archivo CSV llamado 'solicitudes_externas.csv' con las siguientes columnas:
-// cliente_email,asunto,descripcion,estado,agente_id
-// ejemplo@cliente.com,Problema con mi cuenta,No puedo acceder,abierta,1
 
 runETL();
